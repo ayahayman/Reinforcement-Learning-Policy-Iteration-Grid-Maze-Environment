@@ -4,9 +4,9 @@ import numpy as np
 # Action encoding: 0=Right,1=Up,2=Left,3=Down
 ACTION_TO_DIR = {
     0: np.array([1, 0]),   # Right
-    1: np.array([0, -1]),  # Up
+    1: np.array([0, 1]),  # Up
     2: np.array([-1, 0]),  # Left
-    3: np.array([0, 1])    # Down
+    3: np.array([0, -1])    # Down
 }
 
 INTENDED_PROB = 0.70
@@ -30,7 +30,17 @@ class GridMDP:
         self.n_states = grid_size * grid_size
         self.n_actions = 4
 
-        self.goal_pos = tuple(goal_pos)
+        # support either a single goal or a list/tuple of two goals
+        if isinstance(goal_pos, (list, tuple)) and len(goal_pos) == 2 and isinstance(goal_pos[0], (list, tuple)):
+            self.goal_pos_list = [tuple(goal_pos[0]), tuple(goal_pos[1])]
+        else:
+            # single goal -> wrap to list (we will also accept a tuple of two goals)
+            try:
+                # if goal_pos is (g1, g2) both tuples
+                self.goal_pos_list = [tuple(goal_pos[0]), tuple(goal_pos[1])]
+            except Exception:
+                self.goal_pos_list = [tuple(goal_pos)]
+
         self.bad_cells = [tuple(b) for b in (bad_cells or [])]
 
         # mapping from (x,y) -> state index
@@ -52,10 +62,11 @@ class GridMDP:
         return 0 <= x < self.grid_size and 0 <= y < self.grid_size
 
     def _is_terminal_pos(self, pos):
-        return tuple(pos) == self.goal_pos or tuple(pos) in self.bad_cells
+        t = tuple(pos)
+        return t in self.goal_pos_list or t in self.bad_cells
 
     def _reward_for_pos(self, pos):
-        if tuple(pos) == self.goal_pos:
+        if tuple(pos) in self.goal_pos_list:
             return 100.0
         if tuple(pos) in self.bad_cells:
             return -100.0
@@ -162,11 +173,14 @@ class PolicyIteration:
         Main policy iteration loop.
         Returns (policy, V)
         """
+        count = 0
         for i in range(max_iterations):
             self.policy_evaluation()
             stable = self.policy_improvement()
+            count = count + 1
             if stable:
                 break
+        print ("Number of iterations = ",count)    
         return self.policy.copy(), self.V.copy()
 
 # Utility to visualize policy as arrows

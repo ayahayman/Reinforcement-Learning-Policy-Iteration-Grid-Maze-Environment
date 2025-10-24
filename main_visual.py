@@ -9,7 +9,7 @@ from grid_maze_env import GridMazeEnv
 def random_positions(grid_size, seed=None):
     rng = np.random.default_rng(seed)
     positions = []
-    while len(positions) < 4:
+    while len(positions) < 5:
         pos = (int(rng.integers(0, grid_size)), int(rng.integers(0, grid_size)))
         if pos not in positions:
             positions.append(pos)
@@ -17,8 +17,16 @@ def random_positions(grid_size, seed=None):
 
 def print_policy_grid(policy, grid_size, goal_pos, bad_cells):
     grid = policy_to_grid(policy, grid_size)
-    gx, gy = goal_pos
-    grid[gy][gx] = "G"
+    # goal_pos may be a single goal or a list of goals
+    if isinstance(goal_pos, (list, tuple)) and len(goal_pos) == 2 and isinstance(goal_pos[0], (list, tuple)):
+        goals = [tuple(goal_pos[0]), tuple(goal_pos[1])]
+    else:
+        try:
+            goals = [tuple(goal_pos)]
+        except Exception:
+            goals = []
+    for gx, gy in goals:
+        grid[gy][gx] = "G"
     for bx, by in bad_cells:
         grid[by][bx] = "X"
     print("\nPolicy grid (rows = y from 0 at top):")
@@ -74,15 +82,16 @@ def main():
 
     # Choose a random maze instance (deterministic due to seed)
     positions = random_positions(grid_size)
-    agent_pos, goal_pos, bad1, bad2 = positions
-    print("Positions (agent, goal, bad1, bad2):", agent_pos, goal_pos, bad1, bad2)
+    # positions: agent, goal1, goal2, bad1, bad2
+    agent_pos, goal1, goal2, bad1, bad2 = positions
+    print("Positions (agent, goal1, goal2, bad1, bad2):", agent_pos, goal1, goal2, bad1, bad2)
 
     # Build MDP for that fixed maze and compute policy
-    mdp = GridMDP(grid_size=grid_size, goal_pos=goal_pos, bad_cells=[bad1, bad2])
+    mdp = GridMDP(grid_size=grid_size, goal_pos=[goal1, goal2], bad_cells=[bad1, bad2])
     pi = PolicyIteration(mdp, gamma=0.99, theta=1e-6)
     policy, V = pi.run(max_iterations=1000)
 
-    print_policy_grid(policy, grid_size, goal_pos, [bad1, bad2])
+    print_policy_grid(policy, grid_size, [goal1, goal2], [bad1, bad2])
 
     # Print value function (optional)
     print("Value function (grid):")
@@ -103,7 +112,7 @@ def main():
     # Monkey-patch env._generate_random_positions so resets use our chosen layout
     def fixed_generate_positions():
         env.agent_pos = np.array(agent_pos)
-        env.goal_pos = np.array(goal_pos)
+        env.goal_pos = [np.array(goal1), np.array(goal2)]
         env.bad_cells = [np.array(bad1), np.array(bad2)]
     env._generate_random_positions = fixed_generate_positions
 

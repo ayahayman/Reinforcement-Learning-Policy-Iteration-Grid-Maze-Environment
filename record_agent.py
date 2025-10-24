@@ -25,7 +25,7 @@ except Exception:
 def random_positions(grid_size, seed=None):
     rng = np.random.default_rng(seed)
     positions = []
-    while len(positions) < 4:
+    while len(positions) < 5:
         pos = (int(rng.integers(0, grid_size)), int(rng.integers(0, grid_size)))
         if pos not in positions:
             positions.append(pos)
@@ -130,24 +130,24 @@ def main():
         for i in range(episodes_to_record):
             # Choose a new random maze for each episode (seed=None gives randomness)
             positions = random_positions(grid_size, seed=None)
-            agent_pos, goal_pos, bad1, bad2 = positions
-            print(f"\nEpisode {i+1} positions (agent, goal, bad1, bad2): {agent_pos}, {goal_pos}, {bad1}, {bad2}")
+            agent_pos, goal1, goal2, bad1, bad2 = positions
+            print(f"\nEpisode {i+1} positions (agent, goal1, goal2, bad1, bad2): {agent_pos}, {goal1}, {goal2}, {bad1}, {bad2}")
 
             # 1) Build MDP and compute policy for this layout
-            mdp = GridMDP(grid_size=grid_size, goal_pos=goal_pos, bad_cells=[bad1, bad2])
+            mdp = GridMDP(grid_size=grid_size, goal_pos=[goal1, goal2], bad_cells=[bad1, bad2])
             pi = PolicyIteration(mdp, gamma=0.99, theta=1e-6)
             policy, V = pi.run(max_iterations=1000)
             print("  Policy computed for this maze.")
 
             # 2) Monkey-patch env._generate_random_positions so reset will place this layout
-            def make_fixed_generate_positions(a_pos, g_pos, b1, b2):
+            def make_fixed_generate_positions(a_pos, g1, g2, b1, b2):
                 def fixed_generate_positions():
                     env.agent_pos = np.array(a_pos)
-                    env.goal_pos = np.array(g_pos)
+                    env.goal_pos = [np.array(g1), np.array(g2)]
                     env.bad_cells = [np.array(b1), np.array(b2)]
                 return fixed_generate_positions
 
-            env._generate_random_positions = make_fixed_generate_positions(agent_pos, goal_pos, bad1, bad2)
+            env._generate_random_positions = make_fixed_generate_positions(agent_pos, goal1, goal2, bad1, bad2)
 
             # 3) Record the episode
             frames, final_reward = record_episode(env, policy, max_steps=300, step_delay=0.0)

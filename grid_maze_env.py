@@ -25,20 +25,21 @@ class GridMazeEnv(gym.Env):
         # 0=Right, 1=Up, 2=Left, 3=Down
         self.action_space = spaces.Discrete(4)
         
-        # Observation space
+        # Observation space: agent(x,y), goal1(x,y), goal2(x,y), bad1(x,y), bad2(x,y)
+        # = 5 * 2 = 10 integers
         self.observation_space = spaces.Box(
-            low=0, 
-            high=grid_size-1, 
-            shape=(8,), 
+            low=0,
+            high=grid_size-1,
+            shape=(10,),
             dtype=np.int32
         )
         
         # Action mappings
         self.action_to_direction = {
             0: np.array([1, 0]),   # Right
-            1: np.array([0, -1]),  # Up
+            1: np.array([0, 1]),  # Up
             2: np.array([-1, 0]),  # Left
-            3: np.array([0, 1])    # Down
+            3: np.array([0, -1])    # Down
         }
         
         # Movement probabilities
@@ -68,19 +69,20 @@ class GridMazeEnv(gym.Env):
         return perpendiculars[action]
     
     def _generate_random_positions(self):
-        """Generate random non-overlapping positions for S, G, and 2 X's"""
+        """Generate random non-overlapping positions for agent, 2 goals, and 2 bad cells"""
         positions = []
-        while len(positions) < 4:
+        while len(positions) < 5:
             pos = (
-                self.np_random.integers(0, self.grid_size),
-                self.np_random.integers(0, self.grid_size)
+                int(self.np_random.integers(0, self.grid_size)),
+                int(self.np_random.integers(0, self.grid_size))
             )
             if pos not in positions:
                 positions.append(pos)
-        
+
+        # order: agent, goal1, goal2, bad1, bad2
         self.agent_pos = np.array(positions[0])
-        self.goal_pos = np.array(positions[1])
-        self.bad_cells = [np.array(positions[2]), np.array(positions[3])]
+        self.goal_pos = [np.array(positions[1]), np.array(positions[2])]
+        self.bad_cells = [np.array(positions[3]), np.array(positions[4])]
     
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state"""
@@ -101,16 +103,39 @@ class GridMazeEnv(gym.Env):
         """Return the observation as a flat array of coordinates"""
         return np.concatenate([
             self.agent_pos,
-            self.goal_pos,
+            self.goal_pos[0],
+            self.goal_pos[1],
             self.bad_cells[0],
             self.bad_cells[1]
         ]).astype(np.int32)
     
     def _get_info(self):
         """Return additional info (optional)"""
-        return {
-            "distance_to_goal": np.linalg.norm(self.agent_pos - self.goal_pos)
-        }
+        # distance to nearest goal (support single goal or list of goals)
+        if self.goal_pos is None:
+            return {"distance_to_goal": None}
+
+        # normalize goals to tuple list
+        if isinstance(self.goal_pos, (list, tuple)):
+            goals = [tuple(g) if not isinstance(g, tuple) else g for g in self.goal_pos]
+        else:
+            goals = [tuple(self.goal_pos) if not isinstance(self.goal_pos, tuple) else self.goal_pos]
+
+        dists = [np.linalg.norm(self.agent_pos - np.array(g)) for g in goals]
+        return {"distance_to_goal": float(min(dists))}
+
+    def _is_goal_pos(self, pos):
+        """Return True if pos matches any goal (robust to list/array/tuple types)."""
+        if self.goal_pos is None:
+            return False
+        t = tuple(pos)
+        if isinstance(self.goal_pos, (list, tuple)):
+            for g in self.goal_pos:
+                if tuple(g) == t:
+                    return True
+            return False
+        else:
+            return tuple(self.goal_pos) == t
     
     def _is_valid_position(self, pos):
         """Check if position is within grid bounds"""
@@ -162,8 +187,8 @@ class GridMazeEnv(gym.Env):
         - Hit bad cell: -100
         - Each step: -1 (encourages shorter paths)
         """
-        # Check if reached goal
-        if np.array_equal(self.agent_pos, self.goal_pos):
+        # Check if reached any goal
+        if self._is_goal_pos(self.agent_pos):
             return 100.0
         
         # Check if hit bad cell
@@ -172,19 +197,19 @@ class GridMazeEnv(gym.Env):
                 return -100.0
         
         # Step penalty (encourages finding shortest path)
-        return -1.0
+        return -1
     
     def _is_terminal_state(self):
         """Check if current state is terminal (goal or bad cell)"""
-        # Reached goal
-        if np.array_equal(self.agent_pos, self.goal_pos):
+        # Reached any goal
+        if self._is_goal_pos(self.agent_pos):
             return True
-        
+
         # Hit bad cell
         for bad_cell in self.bad_cells:
             if np.array_equal(self.agent_pos, bad_cell):
                 return True
-        
+
         return False
     
     def render(self):
@@ -225,14 +250,16 @@ class GridMazeEnv(gym.Env):
             )
         
         # Draw goal (Green)
-        goal_rect = pygame.Rect(
-            self.goal_pos[0] * self.cell_size,
-            self.goal_pos[1] * self.cell_size,
-            self.cell_size,
-            self.cell_size
-        )
-        pygame.draw.rect(canvas, (0, 255, 0), goal_rect)
-        
+       # Draw goal (Green)
+        for goal_cell in self.goal_pos:
+            goal_rect = pygame.Rect(
+                goal_cell[0] * self.cell_size,  # use goal_cell instead of self.goal_pos[0]
+                goal_cell[1] * self.cell_size,
+                self.cell_size,
+                self.cell_size
+            )
+            pygame.draw.rect(canvas, (0, 255, 0), goal_rect)
+
         # Draw bad cells (Red)
         for bad_cell in self.bad_cells:
             bad_rect = pygame.Rect(
